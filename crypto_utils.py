@@ -1,6 +1,11 @@
 from cryptography.fernet import Fernet
 
-KEY = b'csnwZlPbUIziE4pi33IS_MXPUOmNYhh9iTYPVraooxo='
+from dotenv import load_dotenv
+import os
+
+# Load variables from .env into the environment
+load_dotenv()
+KEY = os.getenv('MY_SECRET_KEY')
 cipher_suite = Fernet(KEY)
 
 
