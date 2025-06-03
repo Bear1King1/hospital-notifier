@@ -6,7 +6,7 @@ import os
 # Load variables from .env into the environment
 load_dotenv()
 KEY = os.getenv('MY_SECRET_KEY')
-cipher_suite = Fernet(KEY)
+cipher_suite = Fernet(KEY.encode())
 
 
 def encrypt_message(message: str) -> bytes:

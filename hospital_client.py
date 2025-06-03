@@ -1,12 +1,13 @@
 import json
 from ambulance import Ambulance
 import requests
-from crypto_utils import encrypt_message
+import crypto_utils
 import tkinter as tk
 import socketio
 import threading
 
 RECEIVER_SERVER_URL = 'http://localhost:5003/chosen'
+SENDER_SERVER_URL = 'http://localhost:5003/ambulance_info'
 sio = socketio.Client()
 
 # Create the main application window
@@ -24,8 +25,9 @@ GRID_DIM = 4
 class AmbulanceUI(Ambulance):
     ambulances_count = -1
 
-    def __init__(self, id: str, card: tk.Frame, label: tk.Label, time_till_arrival: int = 0, a_type: str = "BLS"):
-        super().__init__(id=id, time_till_arrival=time_till_arrival, a_type=a_type)
+    def __init__(self, id: str, card: tk.Frame, label: tk.Label, time_till_arrival: int = 0, a_type: str = "BLS",
+                 desc: str = ""):
+        super().__init__(id=id, time_till_arrival=time_till_arrival, a_type=a_type, desc=desc)
         AmbulanceUI.ambulances_count += 1
         self.ord = AmbulanceUI.ambulances_count
         self.card = card
@@ -33,10 +35,11 @@ class AmbulanceUI(Ambulance):
 
     def update_time(self, t: int):
         super().update_time(t)
-        self.label.config(text=f"Ambulance {self.id} arriving in {self.time_till_arrival} minutes")
+        desc = f"\nDescription: {self.desc}" if self.desc else ""
+        self.label.config(text=f"Ambulance {self.id} arriving in {self.time_till_arrival} minutes {desc}")
 
     @staticmethod
-    def create_ambulance(id: str, time_arrival: int = 0, a_type:str = "BLS"):
+    def create_ambulance(id: str, time_arrival: int = 0, a_type: str = "BLS", desc: str = ""):
         wrapper = tk.Frame(container, width=130, height=110)
         wrapper.pack_propagate(False)
         shadow = tk.Frame(wrapper, bg="#888888", width=120, height=100)
@@ -47,8 +50,16 @@ class AmbulanceUI(Ambulance):
         label_l = tk.Label(card, text=id, bg="white", fg="black", font=("Arial", 12), wraplength=100,
                            justify="center")
         label_l.place(relx=0.5, rely=0.5, anchor="center")
-        am = AmbulanceUI(label=label_l, card=wrapper, id=id, time_till_arrival=time_arrival,a_type=a_type)
+        am = AmbulanceUI(label=label_l, card=wrapper, id=id, time_till_arrival=time_arrival, a_type=a_type, desc=desc)
+        am.update_time(time_arrival)
         wrapper.grid(row=am.ord // GRID_DIM, column=am.ord % GRID_DIM, padx=10)
+
+        # Add click event
+        def on_click(event):
+            print("clicked label")
+            request_ambulance_update(am)
+
+        label_l.bind("<Button-1>", on_click)
         ambulances[id] = am
         return am
 
@@ -66,17 +77,40 @@ def disconnect():
     sio.emit("stop_receive_updates")
 
 
+def request_ambulance_update(ambulance: AmbulanceUI):
+    try:
+        response = requests.post(
+            SENDER_SERVER_URL,
+            json={"a_code": ambulance.id, "a_type": ambulance.a_type},
+        )
+        print("recevied response")
+        # Access the raw bytes
+        encrypted_bytes = response.content  # or response.raw.read()
+        # Now decrypt it
+        decrypted_json = crypto_utils.decrypt_message(encrypted_bytes)
+        # If it's a JSON string, parse it
+        ambulance_data = json.loads(decrypted_json)
+        ambulance.desc = ambulance_data["description"]
+        ambulance.update_time(ambulance_data["arrival_time"])
+        print(f"Manually updated ambulance {ambulance.id}")
+    except Exception as e:
+        print(e)
+        print("Problem manually updating ambulance", e)
+
+
 def update_ambulances(data: dict):
     ordered = sorted(data.items(), key=lambda am: am[1]["arrival_time"])
     for (am_id, a_data) in ordered:
         if am_id not in ambulances:
-            AmbulanceUI.create_ambulance(am_id, a_data["arrival_time"], a_data["type"])
+            AmbulanceUI.create_ambulance(am_id, a_data["arrival_time"], a_data["type"], a_data["description"])
         else:
             ambulances[am_id].update_time(a_data["arrival_time"])
 
 
 @sio.on('ambulance_updates')
 def on_status_update(data):
+    print("Received raw-data from server:", data)
+    data = crypto_utils.decrypt_message(data)
     print("Received data from server:", data)
 
     # Safely update the UI using app.after
