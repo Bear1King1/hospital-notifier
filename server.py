@@ -161,6 +161,6 @@ if __name__ == "__main__":
     print("Starting the sender")
     scheduler.add_job(advance_ambulances, 'interval', minutes=0.2, id='advance_ambulances')
     scheduler.add_job(schedule_ambulance, 'interval', minutes=AMBULANCE_SCHEDULE_INTERVAL, id='schedule_ambulances')
-    scheduler.add_job(send_ambulance_alert, 'interval', minutes=0.2, id='send_ambulance_alert')
+    scheduler.add_job(send_ambulance_alert, 'interval', minutes=0.05, id='send_ambulance_alert')
     scheduler.start()
     app.run(port=5003)
