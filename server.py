@@ -163,4 +163,5 @@ if __name__ == "__main__":
     scheduler.add_job(schedule_ambulance, 'interval', minutes=AMBULANCE_SCHEDULE_INTERVAL, id='schedule_ambulances')
     scheduler.add_job(send_ambulance_alert, 'interval', minutes=0.05, id='send_ambulance_alert')
     scheduler.start()
-    app.run(port=5003)
+    import os
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
