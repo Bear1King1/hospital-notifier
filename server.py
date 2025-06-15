@@ -46,6 +46,11 @@ def dequeue_ambulance(a_type="BLS"):
     return ambulance
 
 
+def enqueue_ambulance(amb: Ambulance):
+    active_ambulances[amb.a_type].remove(amb.id)
+    available_ambulance_ids[amb.a_type].append(amb.id)
+
+
 @socketio.on("receive_updates")
 def on_receive_updates():
     print("Client registered on receive_updates")
@@ -123,6 +128,9 @@ class AmbulanceManager:
     def add_ambulance(self, a: Ambulance):
         self.ambulances[a.id] = a
 
+    def remove_ambulance(self, a: Ambulance):
+        del self.ambulances[a.id]
+
     def advance_ambulance(self, id: str, by=1):
         self.ambulances[id].advance_time(by)
 
@@ -145,12 +153,30 @@ def advance_ambulances():
         manager.advance_ambulance(ambulance_id)
 
 
+def ambulance_pullback(ambulance: Ambulance):
+    # remove from manager's active ambulances
+    manager.remove_ambulance(ambulance)
+    # put back in the available queue
+    enqueue_ambulance(ambulance)
+
+
 def schedule_ambulance():
     if random.randint(1, 100) < AMBULANCE_SCHEDULE_CHANCE:
         a_type = random.choice(["BLS", "MICU"])
         print(f"Scheduling ambulance of type {a_type}")
-        manager.add_ambulance(dequeue_ambulance(a_type=a_type))
-
+        amb = dequeue_ambulance(a_type=a_type)
+        manager.add_ambulance(amb)
+        from datetime import datetime, timedelta
+        run_time = datetime.now() + timedelta(hours=0, minutes=amb.time_till_arrival)
+        # ambulance pullback action
+        scheduler.add_job(
+            func=ambulance_pullback,
+            trigger='date',  # One-shot execution
+            run_date=run_time,  # Exact time to run
+            args=[amb],  # Function parameters
+            id=f'ambulance_pullback_{amb.id}',
+            replace_existing=True
+        )
 
 def send_ambulance_alert():
     print("Sending ambulance alert")
@@ -164,4 +190,5 @@ if __name__ == "__main__":
     scheduler.add_job(send_ambulance_alert, 'interval', minutes=0.05, id='send_ambulance_alert')
     scheduler.start()
     import os
+
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))

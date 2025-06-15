@@ -124,7 +124,7 @@ def on_status_update(data):
 # Thread for running the socket client
 def receive_messages():
     try:
-        sio.connect('http://localhost:5003')  # Change port as needed
+        sio.connect('https://ambulance-server-9ff3.onrender.com')  # Change port as needed
         sio.wait()
     except Exception as e:
         print("Socket connection failed:", e)
