@@ -6,8 +6,10 @@ import tkinter as tk
 import socketio
 import threading
 
-RECEIVER_SERVER_URL = 'http://localhost:5003/chosen'
-SENDER_SERVER_URL = 'http://localhost:5003/ambulance_info'
+DEV = False
+
+RECEIVER_SERVER_URL = 'http://localhost:5003/chosen' if DEV else "https://ambulance-server-9ff3.onrender.com/chosen"
+SENDER_SERVER_URL = 'http://localhost:5003/ambulance_info' if DEV else "https://ambulance-server-9ff3.onrender.com/ambulance_info"
 sio = socketio.Client()
 
 # Create the main application window
@@ -30,12 +32,26 @@ class AmbulanceUI(Ambulance):
         super().__init__(id=id, time_till_arrival=time_till_arrival, a_type=a_type, desc=desc)
         AmbulanceUI.ambulances_count += 1
         self.ord = AmbulanceUI.ambulances_count
+        self.arrived = False
         self.card = card
         self.label = label
 
     def update_time(self, t: int):
         super().update_time(t)
+        if self.arrived:
+            return
         desc = f"\nDescription: {self.desc}" if self.desc else ""
+        if t == 0:
+            self.arrived = True
+            self.label.config(text=f"Ambulance {self.id} Arrived {desc}")
+
+            def remove_ambulance():
+                self.card.destroy()
+                AmbulanceUI.ambulances_count -= 1
+                del ambulances[self.id]
+
+            app.after(1000 * 30, remove_ambulance)
+            return
         self.label.config(text=f"Ambulance {self.id} arriving in {self.time_till_arrival} minutes {desc}")
 
     @staticmethod
@@ -124,7 +140,8 @@ def on_status_update(data):
 # Thread for running the socket client
 def receive_messages():
     try:
-        sio.connect('https://ambulance-server-9ff3.onrender.com')  # Change port as needed
+        host = "http://localhost:5003" if DEV else 'https://ambulance-server-9ff3.onrender.com'
+        sio.connect(host)  # Change port as needed
         sio.wait()
     except Exception as e:
         print("Socket connection failed:", e)

@@ -6,7 +6,8 @@ from crypto_utils import encrypt_message
 import tkinter as tk
 from tkinter import ttk
 
-SENDER_SERVER_URL = 'http://127.0.0.1:5003/post_ambulance'
+DEV = False
+SENDER_SERVER_URL = 'http://localhost:5003' if DEV else 'https://ambulance-server-9ff3.onrender.com/post_ambulance'
 
 options = [
     "CPR in progres",

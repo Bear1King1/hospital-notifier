@@ -8,11 +8,13 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from pydantic import BaseModel, ValidationError
 
 app = Flask(__name__)
+DEV = False
 socketio = SocketIO(app, debug=True, cors_allowed_origins='*')
 scheduler = BackgroundScheduler()
 AMBULANCE_UPDATES_ROOM = "ambulance_updates"
 AMBULANCE_SCHEDULE_INTERVAL = 0.5
-AMBULANCE_SCHEDULE_CHANCE = 15
+AMBULANCE_ADVANCE_INTERVAL = 1
+AMBULANCE_SCHEDULE_CHANCE = 50
 description_options = [
     "CPR in progres",
     "difficulty breathing",
@@ -31,7 +33,7 @@ active_ambulances = {
 
 
 def random_time():
-    return random.randint(3, 45)
+    return random.randint(1 if DEV else 3, 2 if DEV else 45)
 
 
 def dequeue_ambulance(a_type="BLS"):
@@ -140,43 +142,45 @@ class AmbulanceManager:
 
 manager = AmbulanceManager({})
 
-manager.add_ambulance(dequeue_ambulance())
-
 
 def advance_ambulances():
     print("Advancing Ambulances")
-    random_type = random.choice(["BLS", "MICU"])
-    if not active_ambulances[random_type]:
-        return
-    ambulance_id = random.choice(active_ambulances[random_type])
-    if random.randint(1, 100) < 50:
-        manager.advance_ambulance(ambulance_id)
+    for a_type, ambulances in active_ambulances.items():
+        for amb_id in ambulances:
+            manager.advance_ambulance(amb_id)
 
 
 def ambulance_pullback(ambulance: Ambulance):
+    print("ambulance_pullback")
     # remove from manager's active ambulances
     manager.remove_ambulance(ambulance)
     # put back in the available queue
     enqueue_ambulance(ambulance)
 
 
-def schedule_ambulance():
+def schedule_ambulance(a_type: str):
+    amb = dequeue_ambulance(a_type=a_type)
+    manager.add_ambulance(amb)
+    from datetime import datetime, timedelta
+    print(f"Scheduling pullback in: {amb.time_till_arrival} minutes")
+    run_time = datetime.now() + timedelta(minutes=amb.time_till_arrival)
+    # ambulance pullback action
+    scheduler.add_job(
+        func=ambulance_pullback,
+        trigger='date',  # One-shot execution
+        run_date=run_time,  # Exact time to run
+        args=[amb],  # Function parameters
+        id=f'ambulance_pullback_{amb.id}',
+        replace_existing=True
+    )
+
+
+def random_type_schedule_ambulance():
     if random.randint(1, 100) < AMBULANCE_SCHEDULE_CHANCE:
         a_type = random.choice(["BLS", "MICU"])
         print(f"Scheduling ambulance of type {a_type}")
-        amb = dequeue_ambulance(a_type=a_type)
-        manager.add_ambulance(amb)
-        from datetime import datetime, timedelta
-        run_time = datetime.now() + timedelta(hours=0, minutes=amb.time_till_arrival)
-        # ambulance pullback action
-        scheduler.add_job(
-            func=ambulance_pullback,
-            trigger='date',  # One-shot execution
-            run_date=run_time,  # Exact time to run
-            args=[amb],  # Function parameters
-            id=f'ambulance_pullback_{amb.id}',
-            replace_existing=True
-        )
+        schedule_ambulance(a_type)
+
 
 def send_ambulance_alert():
     print("Sending ambulance alert")
@@ -185,10 +189,15 @@ def send_ambulance_alert():
 
 if __name__ == "__main__":
     print("Starting the sender")
-    scheduler.add_job(advance_ambulances, 'interval', minutes=0.2, id='advance_ambulances')
-    scheduler.add_job(schedule_ambulance, 'interval', minutes=AMBULANCE_SCHEDULE_INTERVAL, id='schedule_ambulances')
+    scheduler.add_job(advance_ambulances, 'interval', minutes=AMBULANCE_ADVANCE_INTERVAL, id='advance_ambulances')
+    scheduler.add_job(random_type_schedule_ambulance, 'interval', minutes=AMBULANCE_SCHEDULE_INTERVAL,
+                      id='schedule_ambulances')
     scheduler.add_job(send_ambulance_alert, 'interval', minutes=0.05, id='send_ambulance_alert')
     scheduler.start()
+    random_type_schedule_ambulance()
     import os
 
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
+    if DEV:
+        app.run(host='localhost', port=5003)
+    else:
+        app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
